@@ -1,11 +1,12 @@
-﻿using Common.Services;
+﻿using BCrypt.Net;
+using Common.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using BCrypt.Net;
 namespace Huellitas.Services.Administration
 {
     public class AdministrationService(AdministrationContext context) : DbService<AdministrationContext>(context)
@@ -179,11 +180,10 @@ namespace Huellitas.Services.Administration
         {
             return await Context.Pets.ToListAsync();
         }
-        public async Task  PostPet(PetData data)
+        public async Task PostPet(PetData data)
         {
             var result = new Pet
             {
-
                 PetName = data.PetName,
                 PetYears = data.PetYears,
                 PetBreed = data.PetBreed,
@@ -191,14 +191,94 @@ namespace Huellitas.Services.Administration
                 PetStatusId = 1,
                 CreateDate = DateOnly.FromDateTime(DateTime.Now),
                 PetDescription = data.PetDescription,
-                Photo = data.Photo,
-                UserName = data.UserName,
-                
+                UserName = data.UserName
+            };
+
+            // Primero guardamos para generar el PetId
+            Context.Pets.Add(result);
+            await Context.SaveChangesAsync(); // Aquí ya tienes el PetId
+
+            if (!string.IsNullOrWhiteSpace(data.Photo))
+            {
+                // Ruta base del proyecto
+                string basePath = Directory.GetParent(AppContext.BaseDirectory).FullName;
+
+                // Carpeta: media/{PetId}
+                string routeString = Path.Combine(basePath, "pets", result.PetId.ToString());
+
+                if (!Directory.Exists(routeString))
+                    Directory.CreateDirectory(routeString);
+
+                DirectoryInfo di = new DirectoryInfo(routeString);
+
+                // Limpiar carpeta antes de guardar
+                foreach (FileInfo file in di.GetFiles())
+                {
+                    file.Delete();
+                }
+
+                // Detectar extensión
+                var match = Regex.Match(data.Photo, @"data:image/(?<type>.+?);base64,");
+                string extension = match.Success ? match.Groups["type"].Value : "png";
+
+                // Extraer base64 limpio
+                string base64Data;
+
+                if (data.Photo.StartsWith("data:image"))
+                    base64Data = Regex.Match(data.Photo, @"data:image/.+;base64,(?<data>[\s\S]+)")
+                                       .Groups["data"].Value;
+                else
+                    base64Data = data.Photo;
+
+                base64Data = base64Data
+                                .Replace(" ", "+")
+                                .Replace("\r", "")
+                                .Replace("\n", "");
+
+                if (!string.IsNullOrWhiteSpace(base64Data))
+                {
+                    byte[] bytes = Convert.FromBase64String(base64Data);
+
+                    string filePath = Path.Combine(routeString, $"{result.PetId}.{extension}");
+
+                    await File.WriteAllBytesAsync(filePath, bytes);
+
+                    // Guardamos extensión en DB
+                    result.Extension = extension;
+                    await Context.SaveChangesAsync();
+                }
+            }
+
+        }
+        public async Task<PhotoData> GetPetPhoto(string PetId)
+        {
+            var result = await (from P in Context.Pets
+                                where P.PetId.ToString() == PetId
+                                select new
+                                {
+                                    PetId = PetId,
+                                    Extension = P.Extension,
+                                }).SingleAsync();
+
+
+            // Construir ruta de la foto
+            string directorio = System.IO.Path.Combine(
+                "pets", result.PetId.ToString(), $"{result.PetId.ToString()}.{result.Extension}" // aquí usas la extensión que quieras
+            );
+            byte[]? Photo = null;
+            if (File.Exists(directorio))
+            {
+                Photo = await File.ReadAllBytesAsync(directorio);
+            }
+            return new PhotoData
+            {
+                Photo = Photo,
+                Extension = result.Extension,
 
             };
-            Context .Pets.Add(result);
-            await Context.SaveChangesAsync();
+
         }
+
         public async Task PutPet(PetData data)
         {
             var Pet = await Context.Pets.Where(x => x.PetId == data.PetId).FirstOrDefaultAsync();
@@ -388,39 +468,153 @@ namespace Huellitas.Services.Administration
         public async Task PutEvent(Eventdata data)
         {
             var ev = await Context.Events
-                .Where(x => x.EventId == data.IdEvent)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(x => x.EventId == data.IdEvent);
 
             if (ev == null)
             {
-                
                 ev = new Event
                 {
                     EventTitle = data.EventTitle,
                     Description = data.Description,
                     Date = data.Date,
-                    Location = data.Location,
-                    Image = data.Image
+                    Location = data.Location
                 };
 
                 Context.Events.Add(ev);
+                await Context.SaveChangesAsync(); // 🔹 Necesario para generar EventId
             }
             else
             {
-              
                 ev.EventTitle = data.EventTitle;
                 ev.Description = data.Description;
                 ev.Date = data.Date;
                 ev.Location = data.Location;
-                ev.Image = data.Image;
+
+                await Context.SaveChangesAsync();
             }
 
-            await Context.SaveChangesAsync();
+            // 🔹 Guardar imagen si viene
+            if (!string.IsNullOrWhiteSpace(data.Image))
+            {
+                try
+                {
+                    string basePath = Directory.GetParent(AppContext.BaseDirectory).FullName;
+                    string routeString = Path.Combine(basePath, "events", ev.EventId.ToString());
+
+                    if (!Directory.Exists(routeString))
+                        Directory.CreateDirectory(routeString);
+
+                    // Limpiar carpeta
+                    DirectoryInfo di = new DirectoryInfo(routeString);
+                    foreach (FileInfo file in di.GetFiles())
+                        file.Delete();
+
+                    // Detectar extensión
+                    var match = Regex.Match(data.Image, @"data:image/(?<type>.+?);base64,");
+                    string extension = match.Success ? match.Groups["type"].Value : "png";
+
+                    extension = extension.ToLower();
+
+                    if (!new[] { "png", "jpg", "jpeg", "webp" }.Contains(extension))
+                        extension = "png";
+
+                    // Extraer base64 limpio
+                    string base64Data = data.Image.StartsWith("data:image")
+                        ? Regex.Match(data.Image, @"data:image/.+;base64,(?<data>[\s\S]+)")
+                               .Groups["data"].Value
+                        : data.Image;
+
+                    base64Data = base64Data
+                                    .Replace(" ", "+")
+                                    .Replace("\r", "")
+                                    .Replace("\n", "");
+
+                    if (!string.IsNullOrWhiteSpace(base64Data))
+                    {
+                        byte[] bytes = Convert.FromBase64String(base64Data);
+
+                        string filePath = Path.Combine(routeString, $"{ev.EventId}.{extension}");
+
+                        await File.WriteAllBytesAsync(filePath, bytes);
+
+                        // 🔹 Guardamos SOLO la extensión
+                        ev.Extension = extension;
+                        await Context.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Error guardando imagen del evento: {ex.Message}");
+                }
+            }
         }
 
-        public async Task<List<Event>> GetListEvent()
+        public async Task<List<EventResponse>> GetListEvent()
         {
-            return await Context.Events.ToListAsync();
+            var today = DateTime.Today;
+
+            var events = await Context.Events
+                .Where(e => e.Date >= today)
+                .OrderBy(e => e.Date)
+                .ToListAsync();
+
+            var result = new List<EventResponse>();
+
+            string basePath = Directory.GetParent(AppContext.BaseDirectory)?.FullName
+                              ?? AppContext.BaseDirectory;
+
+            foreach (var ev in events)
+            {
+                byte[]? photoBytes = null;
+                string? extension = ev.Extension?.Trim().ToLower();
+
+                if (!string.IsNullOrEmpty(extension))
+                {
+                    string filePath = Path.Combine(
+                        basePath,
+                        "events",
+                        ev.EventId.ToString(),
+                        $"{ev.EventId}.{extension}"
+                    );
+
+                    if (File.Exists(filePath))
+                    {
+                        photoBytes = await File.ReadAllBytesAsync(filePath);
+                    }
+                }
+
+                // Imagen por defecto
+                if (photoBytes == null || photoBytes.Length == 0)
+                {
+                    string defaultPath = Path.Combine(basePath, "events", "NoImage.jpg");
+
+                    if (File.Exists(defaultPath))
+                    {
+                        photoBytes = await File.ReadAllBytesAsync(defaultPath);
+                        extension = "jpg";
+                    }
+                }
+
+                string? base64Photo = null;
+
+                if (photoBytes != null && extension != null)
+                {
+                    base64Photo = $"data:image/{extension};base64,{Convert.ToBase64String(photoBytes)}";
+                }
+
+                result.Add(new EventResponse
+                {
+                    EventId = ev.EventId,
+                    EventTitle = ev.EventTitle,
+                    Description = ev.Description,
+                    Date = ev.Date,
+                    Location = ev.Location,
+                    Extension = extension,
+                    Photo = base64Photo
+                });
+            }
+
+            return result;
         }
 
         public async Task DeleteEvent(int id)

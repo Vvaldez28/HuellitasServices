@@ -316,6 +316,22 @@ namespace HuellitasServices.Controllers
             }
 
         }
+        [HttpGet("GetPetPhoto")]
+        public async Task<ActionResult<PhotoData>> GetPetPhoto(string PetId)
+        {
+            try
+            {
+                return await administrationService.GetPetPhoto(PetId);
+            }
+            catch (CustomException ex)
+            {
+                return StatusCode(217, new { success = false, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return NotFound(ex.Message);
+            }
+        }
         [HttpDelete("Pet")]
         public async Task<ActionResult> DeletePet(int petId)
         {
@@ -449,7 +465,7 @@ namespace HuellitasServices.Controllers
 
         }
         [HttpGet("EventList")]
-        public async Task<ActionResult<List<Event>>> GetListEvent()
+        public async Task<ActionResult<List<EventResponse>>> GetListEvent()
         {
             try
             {

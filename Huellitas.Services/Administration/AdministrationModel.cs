@@ -71,11 +71,12 @@ namespace Huellitas.Services.Administration
         public int PetSizeId {  get; set; }
         public int PetStatusId { get; set; }
         public string PetDescription { get; set; } = null!;
-        public string Photo {  get; set; } = null!;
+        public string? Photo {  get; set; } 
         public DateOnly CreateDate {  get; set; }
         public string UserName { get; set; } = null!;
         public DateOnly? CloseDate { get; set; }
-      public PetStatus? Status { get; set; }
+        public string? Extension { get; set; } 
+        public PetStatus? Status { get; set; }
         public PetSize? Size { get; set; }
 
     }
@@ -107,7 +108,7 @@ namespace Huellitas.Services.Administration
         public string Description { get; set; } = null!;
         public DateTime Date { get; set; }
         public string Location { get; set; } = null!;
-        public string? Image { get; set; }
+        public string? Extension { get; set; }
 
     }
 }

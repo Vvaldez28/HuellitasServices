@@ -69,6 +69,11 @@ namespace Huellitas.Services.Administration
         public DateOnly? CloseDate { get; set; }
 
     }
+    public class PhotoData
+    {
+        public byte[]? Photo { get; set; }
+        public string? Extension { get; set; }
+    }
     public class ChangePutStatusData
     {
         public int PetId { get; set; }
@@ -94,5 +99,16 @@ namespace Huellitas.Services.Administration
         public string Location { get; set; } = null;
         public string Image { get; set; } = null;
 
+    }
+
+    public class EventResponse
+    {
+        public int EventId { get; set; }
+        public string EventTitle { get; set; } = null!;
+        public string Description { get; set; } = null!;
+        public DateTime Date { get; set; }
+        public string Location { get; set; } = null!;
+        public string? Extension { get; set; }
+        public string? Photo { get; set; } // base64
     }
 }
